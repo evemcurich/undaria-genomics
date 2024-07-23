@@ -4,7 +4,10 @@ all code was run as batch scripts within the HPC at Newcastle University, "Rocke
 
 ## Using Conda
 ### Creating a conda environment
+```
 conda create --name "env-name"
+
+```
 
 ### Activating a conda environment
 conda activate <env-name>
