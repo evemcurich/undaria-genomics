@@ -236,15 +236,18 @@ for x in $(cat "$filename"); do echo "bowtie2 -x /nobackup/proj/ejwg/Eve_M_Proj/
 2. Again, run the second dsq file with the new align_all.txt file
 ```
 #!/bin/bash
-#SBATCH --output dsq-<NAME>_%A_%2a-%N.out
+#SBATCH --output dsq-bwamemALL-%A_%2a-%N.out
 #SBATCH --array 0-35
-#SBATCH --job-name <NAME>
-#SBATCH -p defq
-#SBATCH --mem-per-cpu "20g" -t "1-00:00:00" --mail-type "ALL"
+#SBATCH --job-name bowtie
+#SBATCH -p long
+#SBATCH --mem-per-cpu "20g" -t "3-00:00:00" --mail-type "ALL"
 
 # DO NOT EDIT LINE BELOW
-python /path/to/directory/dSQBatch.py --job-file /path/to/directory/trim_all.txt --status-dir /path/to/directory
+python /nobackup/proj/ejwg/Eve_M_Proj/dsq/dSQBatch.py --job-file /mnt/storage/nobackup/proj/ejwg/Eve_M_Proj/SRA_download/align_all.txt --status-dir /mnt/storage/nobackup/proj/ejwg/Eve_M_Proj/SRA_download
+
 ```
+
+
 
 
 
