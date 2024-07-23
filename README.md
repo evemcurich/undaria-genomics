@@ -4,7 +4,7 @@ all code was run as batch scripts within the HPC at Newcastle University, "Rocke
 
 It's important throughout this to check the directory you're working in, as well as making sure when you run commands that you specify to the script where the file you're aiming at is located, to avoid it failing
 
-## 1.0 Using Conda
+# 1.0 Using Conda
 ### 1.1 Creating a conda environment
   It's useful to have separate conda environments for different stages of genome processing. Sometimes, when you install many packages into one environment, they can break and not run as expected.
 ```
@@ -184,8 +184,67 @@ the $(cat "$filename") will tell the script to read each line of the txt file an
 # DO NOT EDIT LINE BELOW
 python /path/to/directory/dSQBatch.py --job-file /path/to/directory/trim_all.txt --status-dir /path/to/directory
 ```
+This will give you your new trimmed files!
+## 3.0 Read Alignment
+This stage will guide you through aligning your newly trimmed reads to a reference genome. The packages used will be bowtie2, Sam-Tools, Bam-Tools and Qualimap
+https://anaconda.org/bioconda/bowtie2
+https://anaconda.org/bioconda/samtools
+https://anaconda.org/bioconda/bamtools
+https://anaconda.org/bioconda/qualimap
 
+It'll also require the use of a reference genome, obtained from:
+https://www.ncbi.nlm.nih.gov/datasets/genome/GCA_012845835.1/
 
+## 3.1 Indexing the reference genome
+bowtie2 is our first package to be used to index the reference genome
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=indexingBT
+#SBATCH --output=indexBT_out_%A_%a.out
+#SBATCH --error=indexBT_err_%A_%a.err
+#SBATCH -p interactive
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=40G
+#SBATCH --mail-type=ALL
+
+bowtie2-build GCA_012845835.1_ASM1284583v1_genomic.fna undaria_index
+```
+Here I named it undaria_index for ease, and it is referred to that throughout the rest of the code.
+This will create 6 files with the extension .bt2
+
+## 3.2 Aligning the reads
+1. We'll repeat again the creating of the dsq file, using our same samples text file from before to list all of our different SRA IDs. Not much changes apart from the bowtie2 command itself!
+```
+
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=bowtie2
+#SBATCH --output=bowtie2_%A_%a.out
+#SBATCH --error=bowtie2_%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
+
+filename="samples.txt"
+for x in $(cat "$filename"); do echo "bowtie2 -x /nobackup/proj/ejwg/Eve_M_Proj/SRA_download/undaria_index -1 "$x"_1_val_1.fq.gz -2 "$x"_2_val_2.fq.gz -S /nobackup/proj/ejwg/Eve_M_Proj/SRA_download/fastq/bwa/sam/"$x".sam" >> align_all.txt; done
+
+```
+2. Again, run the second dsq file with the new align_all.txt file
+```
+#!/bin/bash
+#SBATCH --output dsq-<NAME>_%A_%2a-%N.out
+#SBATCH --array 0-35
+#SBATCH --job-name <NAME>
+#SBATCH -p defq
+#SBATCH --mem-per-cpu "20g" -t "1-00:00:00" --mail-type "ALL"
+
+# DO NOT EDIT LINE BELOW
+python /path/to/directory/dSQBatch.py --job-file /path/to/directory/trim_all.txt --status-dir /path/to/directory
+```
 
 
 
