@@ -2,6 +2,8 @@
 scripts and things to do with the bioinformatics side of processing different samples of undaria pinnatifida genomes 
 all code was run as batch scripts within the HPC at Newcastle University, "Rocket".
 
+It's important throughout this to check the directory you're working in, as well as making sure when you run commands that you specify to the script where the file you're aiming at is located, to avoid it failing
+
 ## 1.0 Using Conda
 ### 1.1 Creating a conda environment
   It's useful to have separate conda environments for different stages of genome processing. Sometimes, when you install many packages into one environment, they can break and not run as expected.
@@ -98,7 +100,90 @@ python /path/to/directory/dSQBatch.py --job-file /path/to/directory/dump.txt --s
 ```
 sbatch <NAME>.sh
 ```
+### 2.3 Checking read quality
+Observing the quality of the raw reads you have is an important step before you move on to trimming for the pieces of DNA which are useful. Doing this step will allow you to edit the parameters of the trimming stage, if the strictness of what to cut needs to be changed.
+This stage uses the packages 'fastQC' - https://anaconda.org/bioconda/fastqc and 'multiqc' - https://anaconda.org/bioconda/multiqc
 
+1. Install fastqc
+```
+conda install bioconda::fastqc
+conda install conda install bioconda::multiqc
+```
+2. Adapt the previous initial dSQ command to carry out fastqc instead
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=<NAME>
+#SBATCH --output=<NAME>_%A_%a.out
+#SBATCH --error=<NAME>_%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
+
+for x in *.fastq.gz; do echo "fastqc $x" >> fastqc.txt; done
+```
+3. Adapt your actual dSQ send-off command to the new txt file
+```
+#!/bin/bash
+#SBATCH --output dsq-<NAME>_%A_%2a-%N.out
+#SBATCH --array 0-70
+#SBATCH --job-name <NAME>
+#SBATCH -p defq
+#SBATCH --mem-per-cpu "20g" -t "1-00:00:00" --mail-type "ALL"
+
+# DO NOT EDIT LINE BELOW
+python /path/to/directory/dSQBatch.py --job-file /path/to/directory/fastqc.txt --status-dir /path/to/directory
+```
+The fastqc command will generate many .html reports. When you are working with lots of these, it is easier to use multiqc to view them all simulataneously for comparsion.
+5.  multiqc to visualise all of the results
+it's recommended to make a new conda environment just for multiqc, as it can be a bit tempermental with other packages trying to overwrite each other
+```
+multiqc /path/to/directory
+```
+This command will create one html file which you can analyse for read quality.
+
+## 2.4 Trimming your reads
+This section will use 'Trim_Galore'. Either switch back to your first environment, or make a new one for trimming.
+https://anaconda.org/bioconda/trim-galore
+### 2.4.1 Using dSQ
+For this step, it's again easier to create a dSQ which will perform the same command on all of the different reads simultaneously to save time. However, this time we'll change the original script slightly to 'pull' the SRA IDs from a list to make the pairing situation easier.
+1. Create a "samples.txt" file, containing all of your SRA IDs in order
+```
+nano "samples.txt"
+```
+2. Adapt your initial dsq script file, with a few new additions
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=<NAME>
+#SBATCH --output=<NAME>_%A_%a.out
+#SBATCH --error=<NAME>_%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
+
+filename="samples.txt"
+for x in $(cat "$filename"); do echo "trim_galore --paired "$x"_1.fastq.gz "$x"_2.fastq.gz" >> trim_all.txt; done
+```
+"filename =" establishes where your list of IDs is
+the $(cat "$filename") will tell the script to read each line of the txt file and subtitute the $x in the actual command for the SRA ID, followed by the correct file name
+
+3. Again, send off your new dSQ as an actual array job
+```
+#!/bin/bash
+#SBATCH --output dsq-<NAME>_%A_%2a-%N.out
+#SBATCH --array 0-35
+#SBATCH --job-name <NAME>
+#SBATCH -p defq
+#SBATCH --mem-per-cpu "20g" -t "1-00:00:00" --mail-type "ALL"
+
+# DO NOT EDIT LINE BELOW
+python /path/to/directory/dSQBatch.py --job-file /path/to/directory/trim_all.txt --status-dir /path/to/directory
+```
 
 
 
