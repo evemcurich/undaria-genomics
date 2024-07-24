@@ -4,8 +4,8 @@ all code was run as batch scripts within the HPC at Newcastle University, "Rocke
 
 It's important throughout this to check the directory you're working in, as well as making sure when you run commands that you specify to the script where the file you're aiming at is located, to avoid it failing
 
-# 1.0 Using Conda
-#### 1.1 Creating a conda environment
+## 1.0 Using Conda
+### 1.1 Creating a conda environment
   It's useful to have separate conda environments for different stages of genome processing. Sometimes, when you install many packages into one environment, they can break and not run as expected.
 ```
 conda create --name <env-name>
@@ -17,19 +17,19 @@ conda activate <env-name>
 ```
   To know if you successfully activated the environment, the (base) which usually proceeds your working directory should be changed to the name of your activated environment
 
-### 1.2.1 Deactivating a conda environment
+#### 1.2.1 Deactivating a conda environment
 If you need to switch to a different environment, you can first deactivate the one you are in, then repeat 1.3 to activate your new environment
 ```
 conda deactivate
 ```
 This command does not require you to name the environment you are currently in.
 
-### 1.2.2 Listing your conda environments
+#### 1.2.2 Listing your conda environments
 This allows you to chek the names of your created environments, if you forget their names
 ```
 conda env list
 ```
-### 1.2.3 Removing a conda environment
+#### 1.2.3 Removing a conda environment
 If you create a conda environment you no longer need, you can remove it
 ```
 conda env remove --name <environment-name>
@@ -66,12 +66,16 @@ To make life easier, rather than submitting a separate job script for every sing
 This makes use of the Python 'dead simple queue' for SLURM on HPC systems.
 dSQ: https://github.com/ycrc/dSQ
 1. From this repository, download the 'dSQ.py' and 'dSQBatch.py' files, and place them into the same directory.
-2. Create a script file (.sh) which will use dSQ to generate a list of jobs to carry out as an array
+2. Create a script file (.sh) which will use dSQ to generate a list of jobs to carry out as an array. I'd recommend naming the job and output of this one something to indicate that this is the script which will make another text file, not actually send your jobs off.
+```
+nano <NAME>txtscript.sh
+```
+the command 'nano' just opens a text editor which will allow you to type up/paste in your batch scripts. Paste the below into your nano file, then pressed ctrl+x to close and y to save.
 ```
 #!/bin/bash
 #SBATCH -c 8
 #SBATCH -t 0-10
-#SBATCH --job-name=<NAME>
+#SBATCH --job-name=<NAME>-txtscript 
 #SBATCH --output=<NAME>_%A_%a.out
 #SBATCH --error=<NAME>_%A_%a.err
 #SBATCH -p defq
@@ -81,25 +85,46 @@ dSQ: https://github.com/ycrc/dSQ
 
 for x in *.SRA; do echo "fastq-dump --split-3 $x" >> dump.txt; done
 ```
-3. Next, create a dSQ script which will put these separate commands into one job script together
+this code basically tells our loop to repeat the command for each job, each time replacing the x for any file ending in .SRA
+the * incidates anything ending in .SRA
+  
+3. Next, create a dSQ script which will put these separate commands into one job script together. I'd also recommend naming this one something to indicate its your actual queue script that will send off your jobs. I usually do this by adding dsq- at the start.
 ```
 nano dsq-dump.sh
 ```
+Now paste this into your nano window!
+however, there are a few things you can change:
+-p to change the system of cores(?) you're using
+--array can be changed in accordance to the number of files you are working on. Since mine will generate 36 different jobs for 36 different SRA files, I set my array as 0-35
+  -> (0 counts as the first one)
+the "60g" can also be changed to however much memory you want to use, but most systems will have a set min/max
+-t can be changed if you'd like your jobs to run for longer. "1-00:00:00" is a day, but you can change this
+--mail-type "ALL" will automatically email you when your jobs have begun, when they finish, or if they fail
 ```
 #!/bin/bash
 #SBATCH --output dsq-<NAME>_%A_%2a-%N.out
 #SBATCH --array 0-35
 #SBATCH --job-name <NAME>
-#SBATCH -p long
-#SBATCH --mem-per-cpu "20g" -t "3-00:00:00" --mail-type "ALL"
+#SBATCH -p defq
+#SBATCH --mem-per-cpu "60g" -t "1-00:00:00" --mail-type "ALL"
 
 # DO NOT EDIT LINE BELOW
 python /path/to/directory/dSQBatch.py --job-file /path/to/directory/dump.txt --status-dir /path/to/directory
 ```
 4. Run the dsQ script!
 ```
-sbatch <NAME>.sh
+sbatch dsq-<NAME>.sh
 ```
+5. If you get a failed message from SLURM, you can check the error and output files to see what the problem might be.
+```
+nano *.err
+nano *.out
+```
+To make things easier, you can move all of your new .fastq files to a new folder to work on them there, to make sure it's not just one directory getting too full
+```
+mv *.fastq fastq
+```
+This line of code would be moving any files ending in .fastq to the new fastq directory.
 ### 2.3 Checking read quality
 Observing the quality of the raw reads you have is an important step before you move on to trimming for the pieces of DNA which are useful. Doing this step will allow you to edit the parameters of the trimming stage, if the strictness of what to cut needs to be changed.
 This stage uses the packages 'fastQC' - https://anaconda.org/bioconda/fastqc and 'multiqc' - https://anaconda.org/bioconda/multiqc
@@ -124,7 +149,7 @@ conda install conda install bioconda::multiqc
 
 for x in *.fastq.gz; do echo "fastqc $x" >> fastqc.txt; done
 ```
-3. Adapt your actual dSQ send-off command to the new txt file
+3. Adapt your actual dSQ send-off command to the new txt file, by changing the name of the text file at the end of the --job-file command
 ```
 #!/bin/bash
 #SBATCH --output dsq-<NAME>_%A_%2a-%N.out
@@ -153,6 +178,8 @@ For this step, it's again easier to create a dSQ which will perform the same com
 ```
 nano "samples.txt"
 ```
+You would paste a list of all of your SRA file names into here, but without the .sra extension on the end -- just the SRA followed by all the numbers!
+
 2. Adapt your initial dsq script file, with a few new additions
 ```
 #!/bin/bash
@@ -197,13 +224,19 @@ https://www.ncbi.nlm.nih.gov/datasets/genome/GCA_012845835.1/
 
 ## 3.1 Indexing the reference genome
 bowtie2 is our first package to be used to index the reference genome
+We won't need to use dSQ for this stage, since there's only one file we're working on.
+So, you can just put this straight into a script file using nano and send it off!
+```
+nano genomeindex.sh
+```
+Then paste the following...
 ```
 #!/bin/bash
 #SBATCH -c 8
 #SBATCH -t 0-10
-#SBATCH --job-name=indexingBT
-#SBATCH --output=indexBT_out_%A_%a.out
-#SBATCH --error=indexBT_err_%A_%a.err
+#SBATCH --job-name=genomeindex
+#SBATCH --output=genomeindex_out_%A_%a.out
+#SBATCH --error=genomeindex_err_%A_%a.err
 #SBATCH -p interactive
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=40G
@@ -215,13 +248,20 @@ Here I named it undaria_index for ease, and it is referred to that throughout th
 This will create 6 files with the extension .bt2
 
 ## 3.2 Aligning the reads
-1. We'll repeat again the creating of the dsq file, using our same samples text file from before to list all of our different SRA IDs. Not much changes apart from the bowtie2 command itself!
+1. First of all, to put our files somewhere easily accessible and away from everything we've previously been working on, I would recommend making a new directory (or two) inside the one you've already been working in. Here I will create a new directory called bowtie, with two other files inside called sam and bam, as those are the names of the packages being used.
+```
+mkdir bowtie
+mkdir bowtie/sam
+mkdir bowtie/bam
+```
+2. We'll repeat again the creating of the dsq file, using our same samples text file from before to list all of our different SRA IDs. Not much changes apart from the bowtie2 command itself! I've named this job file bowtie2 since that is the command we're running, but you can change it to anything to make it easily identifiable
+The only thing to double check is that you are still working from the directory where your samples.txt file is, otherwise you may need to move it
 ```
 
 #!/bin/bash
 #SBATCH -c 8
 #SBATCH -t 0-10
-#SBATCH --job-name=bowtie2
+#SBATCH --job-name=b
 #SBATCH --output=bowtie2_%A_%a.out
 #SBATCH --error=bowtie2_%A_%a.err
 #SBATCH -p defq
@@ -230,10 +270,11 @@ This will create 6 files with the extension .bt2
 #SBATCH --mail-type=ALL
 
 filename="samples.txt"
-for x in $(cat "$filename"); do echo "bowtie2 -x /nobackup/proj/ejwg/Eve_M_Proj/SRA_download/undaria_index -1 "$x"_1_val_1.fq.gz -2 "$x"_2_val_2.fq.gz -S /nobackup/proj/ejwg/Eve_M_Proj/SRA_download/fastq/bwa/sam/"$x".sam" >> align_all.txt; done
+for x in $(cat "$filename"); do echo "bowtie2 -x /path/to/directory/undaria_index -1 "$x"_1_val_1.fq.gz -2 "$x"_2_val_2.fq.gz -S /path/to/directory/fastq/bwa/sam/"$x".sam" >> align_all.txt; done
 
 ```
 2. Again, run the second dsq file with the new align_all.txt file
+-> Change the array number if you need to, or the time allowed if yours will take longer/shorter
 ```
 #!/bin/bash
 #SBATCH --output dsq-bwamemALL-%A_%2a-%N.out
@@ -243,11 +284,19 @@ for x in $(cat "$filename"); do echo "bowtie2 -x /nobackup/proj/ejwg/Eve_M_Proj/
 #SBATCH --mem-per-cpu "20g" -t "3-00:00:00" --mail-type "ALL"
 
 # DO NOT EDIT LINE BELOW
-python /nobackup/proj/ejwg/Eve_M_Proj/dsq/dSQBatch.py --job-file /mnt/storage/nobackup/proj/ejwg/Eve_M_Proj/SRA_download/align_all.txt --status-dir /mnt/storage/nobackup/proj/ejwg/Eve_M_Proj/SRA_download
+python /path/to/directory/dSQBatch.py --job-file path/to/directory/align_all.txt --status-dir /path/to/directory
 
 ```
+This will result in us having one .sam file for each SRA ID now in your SAM directory.
+Now we can convert them to BAM!
 
-
+## Converting SAM to BAM
+This section will only require SamTools
+https://anaconda.org/bioconda/samtools
+Or just enter this code into your activated environment:
+```
+conda install bioconda::samtools
+```
 
 
 
