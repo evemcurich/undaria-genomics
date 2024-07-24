@@ -5,7 +5,7 @@ all code was run as batch scripts within the HPC at Newcastle University, "Rocke
 It's important throughout this to check the directory you're working in, as well as making sure when you run commands that you specify to the script where the file you're aiming at is located, to avoid it failing
 
 # 1.0 Using Conda
-### 1.1 Creating a conda environment
+#### 1.1 Creating a conda environment
   It's useful to have separate conda environments for different stages of genome processing. Sometimes, when you install many packages into one environment, they can break and not run as expected.
 ```
 conda create --name <env-name>
