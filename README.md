@@ -297,11 +297,71 @@ Or just enter this code into your activated environment:
 ```
 conda install bioconda::samtools
 ```
+We can once again set this up as a queue for if you are working with many samples
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=conversion
+#SBATCH --output=conversion_%A_%a.out
+#SBATCH --error=conversion_%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
 
+filename="samfiles.txt"
+for x in $(cat "$filename"); do echo "samtools view -bh ./bwa/sam/"$x".sam > ./bwa/bam/"$x".bam" >> convert.txt; done
+```
+Followed by the queue executioning script, as usual
+Ensure the directory leading to the script text file is correct from where you created it in the first step
+```
+#!/bin/bash
+#SBATCH --output dsq-convert-%A_%2a-%N.out
+#SBATCH --array 0-35
+#SBATCH --job-name converting
+#SBATCH -p long
+#SBATCH --mem-per-cpu "20g" -t "3-00:00:00" --mail-type "ALL"
 
+# DO NOT EDIT LINE BELOW
+python /nobackup/proj/ejwg/Eve_M_Proj/dsq/dSQBatch.py --job-file /path/to/directory/convert.txt --status-dir /path/to/directory
+```
+## Sorting and Indexing the BAM files
+Now we've made our BAM files, we need to sort and index them again. You can either run this as a queue, or separately, depending on how many samples you have.
+1) As a queue:
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=sortindex
+#SBATCH --output=sortindex_%A_%a.out
+#SBATCH --error=sortindex_%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
 
+filename="samples.txt"
+for x in $(cat "$filename"); do echo "samtools sort -o SRR518707_sorted.bam SRR518707.bam
+                          samtools index SRR518707_sorted.bam" >> sortindex.txt; done
+```
+Then run the queue script
+```
+#!/bin/bash
+#SBATCH --output dsq-bamindex-%A_%2a-%N.out
+#SBATCH --array 0-35
+#SBATCH --job-name bamindex
+#SBATCH -p defq
+#SBATCH --mem-per-cpu "60g" -t "2-00:00:00" --mail-type "ALL"
 
+# DO NOT EDIT LINE BELOW
+python /nobackup/proj/ejwg/Eve_M_Proj/dsq/dSQBatch.py --job-file /mnt/storage/nobackup/proj/ejwg/Eve_M_Proj/SRA_download/fastq/bwa/bam/indexing.txt --status-dir /mnt/storage/nobackup/proj/ejwg/Eve_M_Proj$
+```
+```
+samtools sort -o SRR518707_sorted.bam SRR518707.bam
 
+samtools index SRR518707_sorted.bam
+```
 
 
 
