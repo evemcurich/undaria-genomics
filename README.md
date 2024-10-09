@@ -66,7 +66,11 @@ To make life easier, rather than submitting a separate job script for every sing
 This makes use of the Python 'dead simple queue' for SLURM on HPC systems.
 dSQ: https://github.com/ycrc/dSQ
 1. From this repository, download the 'dSQ.py' and 'dSQBatch.py' files, and place them into the same directory.
-2. Create a script file (.sh) which will use dSQ to generate a list of jobs to carry out as an array. I'd recommend naming the job and output of this one something to indicate that this is the script which will make another text file, not actually send your jobs off.
+2. Create a samples.txt file which just contains all of your sample IDs without any file extensions, i.e. without the .fq
+```
+nano samples.txt
+```
+3. Create a script file (.sh) which will use dSQ to generate a list of jobs to carry out as an array. I'd recommend naming the job and output of this one something to indicate that this is the script which will make another text file, not actually send your jobs off.
 ```
 nano <NAME>txtscript.sh
 ```
@@ -83,10 +87,11 @@ the command 'nano' just opens a text editor which will allow you to type up/past
 #SBATCH --mem=60G
 #SBATCH --mail-type=ALL
 
-for x in *.SRA; do echo "fastq-dump --split-3 $x" >> dump.txt; done
+filename="samples.txt"
+for x in $(cat "$filename"); do echo "fastq-dump --split-3 $x" >> dump.txt; done
 ```
 this code basically tells our loop to repeat the command for each job, each time replacing the x for any file ending in .SRA
-the * incidates anything ending in .SRA
+"samples.txt" contains all of our sample IDs, without any file extensions
   
 3. Next, create a dSQ script which will put these separate commands into one job script together. I'd also recommend naming this one something to indicate its your actual queue script that will send off your jobs. I usually do this by adding dsq- at the start.
 ```
@@ -147,7 +152,8 @@ conda install conda install bioconda::multiqc
 #SBATCH --mem=60G
 #SBATCH --mail-type=ALL
 
-for x in *.fastq.gz; do echo "fastqc $x" >> fastqc.txt; done
+filename="samples.txt"
+for x in $(cat "$filename"); do echo "fastqc $x" >> fastqc.txt; done
 ```
 3. Adapt your actual dSQ send-off command to the new txt file, by changing the name of the text file at the end of the --job-file command
 ```
@@ -196,9 +202,6 @@ You would paste a list of all of your SRA file names into here, but without the 
 filename="samples.txt"
 for x in $(cat "$filename"); do echo "trim_galore --paired "$x"_1.fastq.gz "$x"_2.fastq.gz" >> trim_all.txt; done
 ```
-"filename =" establishes where your list of IDs is
-the $(cat "$filename") will tell the script to read each line of the txt file and subtitute the $x in the actual command for the SRA ID, followed by the correct file name
-
 3. Again, send off your new dSQ as an actual array job
 ```
 #!/bin/bash
@@ -212,7 +215,7 @@ the $(cat "$filename") will tell the script to read each line of the txt file an
 python /path/to/directory/dSQBatch.py --job-file /path/to/directory/trim_all.txt --status-dir /path/to/directory
 ```
 This will give you your new trimmed files!
-## 3.0 Read Alignment
+## 3.0 Read Alignment and Filtering
 This stage will guide you through aligning your newly trimmed reads to a reference genome. The packages used will be bowtie2, Sam-Tools, Bam-Tools and Qualimap
 https://anaconda.org/bioconda/bowtie2
 https://anaconda.org/bioconda/samtools
@@ -273,7 +276,7 @@ filename="samples.txt"
 for x in $(cat "$filename"); do echo "bowtie2 -x /path/to/directory/undaria_index -1 "$x"_1_val_1.fq.gz -2 "$x"_2_val_2.fq.gz -S /path/to/directory/fastq/bwa/sam/"$x".sam" >> align_all.txt; done
 
 ```
-2. Again, run the second dsq file with the new align_all.txt file
+3. Again, run the second dsq file with the new align_all.txt file
 -> Change the array number if you need to, or the time allowed if yours will take longer/shorter
 ```
 #!/bin/bash
@@ -290,7 +293,7 @@ python /path/to/directory/dSQBatch.py --job-file path/to/directory/align_all.txt
 This will result in us having one .sam file for each SRA ID now in your SAM directory.
 Now we can convert them to BAM!
 
-## Converting SAM to BAM
+## 3.3 Converting SAM to BAM
 This section will only require SamTools
 https://anaconda.org/bioconda/samtools
 Or just enter this code into your activated environment:
@@ -326,7 +329,7 @@ Ensure the directory leading to the script text file is correct from where you c
 # DO NOT EDIT LINE BELOW
 python /nobackup/proj/ejwg/Eve_M_Proj/dsq/dSQBatch.py --job-file /path/to/directory/convert.txt --status-dir /path/to/directory
 ```
-## Sorting and Indexing the BAM files
+## 3.4 Sorting and Indexing the BAM files
 Now we've made our BAM files, we need to sort and index them again. You can either run this as a queue, or separately, depending on how many samples you have.
 1) As a queue:
 ```
@@ -342,8 +345,8 @@ Now we've made our BAM files, we need to sort and index them again. You can eith
 #SBATCH --mail-type=ALL
 
 filename="samples.txt"
-for x in $(cat "$filename"); do echo "samtools sort -o SRR518707_sorted.bam SRR518707.bam
-                          samtools index SRR518707_sorted.bam" >> sortindex.txt; done
+for x in $(cat "$filename"); do echo "samtools sort -o "$x"_sorted.bam "$x".bam
+                          samtools index "$x"_sorted.bam" >> sortindex.txt; done
 ```
 Then run the queue script
 ```
@@ -355,16 +358,236 @@ Then run the queue script
 #SBATCH --mem-per-cpu "60g" -t "2-00:00:00" --mail-type "ALL"
 
 # DO NOT EDIT LINE BELOW
-python /nobackup/proj/ejwg/Eve_M_Proj/dsq/dSQBatch.py --job-file /mnt/storage/nobackup/proj/ejwg/Eve_M_Proj/SRA_download/fastq/bwa/bam/indexing.txt --status-dir /mnt/storage/nobackup/proj/ejwg/Eve_M_Proj$
+python /nobackup/proj/ejwg/Eve_M_Proj/dsq/dSQBatch.py --job-file /path/to/directory/sortindex.txt --status-dir /path/to/directory/
 ```
+## 3.5 Filter the alignment
+We now filter the BAM file to remove reads which are of a low quality. This means that reads which have a mapping quality below 30, are not non-primary alignments, and are pair-ended but mapped more than 800bp apart, will be removed from the sequence. We then re-index these files again.
+1. Make the first dsq file
 ```
-samtools sort -o SRR518707_sorted.bam SRR518707.bam
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=filterbam
+#SBATCH --output=filterbam_%A_%a.out
+#SBATCH --error=filterbam_%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
 
-samtools index SRR518707_sorted.bam
+filename="samples.txt"
+for x in $(cat "$filename"); do echo "bamtools filter -mapQuality '>=30' -isPrimaryAlignment 'true' -insertSize '<=800' -in "$x"_sorted.bam -out "$x"_sorted.mq30.maxinsert.primaryalignment.bam
+
+  samtools index "$x"_sorted.mq30.maxinsert.primaryalignment.bam" >> filterbam.txt; done
 ```
+2. Make the dsq-executable
+```
+#!/bin/bash
+#SBATCH --output dsq-filterbam-%A_%2a-%N.out
+#SBATCH --array 0-35
+#SBATCH --job-name filterbam
+#SBATCH -p defq
+#SBATCH --mem-per-cpu "60g" -t "2-00:00:00" --mail-type "ALL"
 
+# DO NOT EDIT LINE BELOW
+python /nobackup/proj/ejwg/Eve_M_Proj/dsq/dSQBatch.py --job-file /path/to/directory/filterbam.txt --status-dir /path/to/directory/
+```
+## 3.6 Mark PCR Duplicates
+Now we want to remove duplicates of the same sequences to declutter our DNA
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=pcrremoval
+#SBATCH --output=pcrremoval%A_%a.out
+#SBATCH --error=pcrremoval%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
 
+filename="samples.txt"
+for x in $(cat "$filename"); do echo "java -jar ~/Share/picard.jar MarkDuplicates \
+      I=SRR518707_sorted.mq30.maxinsert.primaryalignment.bam \
+      O=SRR518707_sorted.mq30.maxinsert.primaryalignment_marked_duplicates.bam \
+      M=SRR518707_marked_dup_metrics.txt" >> pcrremoval.txt; done
+```
+Execute!
+```
+#!/bin/bash
+#SBATCH --output dsq-pcrremoval-%A_%2a-%N.out
+#SBATCH --array 0-35
+#SBATCH --job-name pcrremoval
+#SBATCH -p defq
+#SBATCH --mem-per-cpu "60g" -t "2-00:00:00" --mail-type "ALL"
 
+# DO NOT EDIT LINE BELOW
+python /nobackup/proj/ejwg/Eve_M_Proj/dsq/dSQBatch.py --job-file /path/to/directory/pcrremoval.txt --status-dir /path/to/directory/
+```
+## 4.0 VCF making
+Now we've got our final BAM file, we can convert it into a vcf to filter it down further, then actually use it for some anaylsis
+To do this, we'll be using bcftools again, with a couple of important flags. For this command too, you won't need to make a queue, as it will be compiling very BAM file you have into one single vcf file. 
+1. Making the VCF
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=vcfmaking
+#SBATCH --output=vcf%A_%a.out
+#SBATCH --error=vcf%A_%a.err
+#SBATCH -p long
+#SBATCH --time=5-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
+
+bcftools mpileup -f /path/to/directory/GCA_012845835.1_ASM1284583v1_genomic.fa --annotate AD,DP -b /path/to/directory/all.bamlist | bcftools call -m -v -f GQ --skip-variants indels -Oz -o /path/to/directory/50inds.vcf.gz
+```
+To break this command down: 
+'-f' is a flag for us to insert our reference genome we'll align all of the BAM files to to make one vcf
+'--annotate AD,DP' tells the output to include both the allele depth (AD) and total depth (DP)
+'-b' tells the command to refer to the bamlist for a list of files to compile into this vcf. 
+'-m' tells the command to use the multi-allelic version of the genotype caller
+'-v' only prints variant sites, which condenses how many reads we end up with
+'-f' is a second call command which allows us to also add GQ to assess genotype quality score
+'--skip-variants indels' allows us to remove indels, as in this case we're only interested in SNPS -- (Single nucleotide polymorphisms)
+'Oz -o' specifies our output file name, and also that we'd like it zipped using gzip too to further condense file size. You can remove the Oz if you don't mind having a large-ish vcf. 
+
+FOR THE BAMLIST:
+The bamlist should be a list of all files, including their full extensions when we their final bam stage, i.e. in this case should all end in '_sorted.mq30.maxinsert.primaryalignment_marked_duplicates.bam'. To make sure the command understands it fully also, I'd also include the directory at the beginning to ensure it isn't looking for them in some weird location. As an example, it should look something like this:
+  '/path/to/directory/SRR12223717_sorted.mq30.maxinsert.primaryalignment_marked_duplicates.bam'
+
+For this one, in terms of time, I'd give it a WHILE. This is a huge process, and for 52 individuals took about 3 days for me. 
+This command should run to give you a single VCF file. If you perform the 'nano' command on the .err and .out files, they should inform you how many individuals (hopefully them all!) were inserted into the vcf, so you can double check none were missed. 
+
+## 5.0 VCF filtering
+Before starting any analysis, it's a good idea to remove any poorly supported data from the vcf. We can do this through SNP filtering, primarily using vcftools
+https://anaconda.org/bioconda/vcftools
+### 5.1 Depth and Genotype Quality
+The first filter to run is for depth and genotype quality. This might need some adjusting depending on the quality of your data, and you can analyse whether or not the filter was approriate by how many sites were left remaining after conducting the filter. You can find this out by looking at the .out and .err files again after running the job. 
+Again too, you won't need any queues from now on - all this is one file!
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=DP_GQ
+#SBATCH --output=DP_GQ%A_%a.out
+#SBATCH --error=DP_GQ%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=2-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
+
+vcftools --gzvcf 50inds.vcf.gz --minDP 6 --minGQ 18 --recode --out 50inds_minDP6GQ18
+```
+Then, do nano of the .err and .out to check if the filtering was appropriate! If no bases have been removed at this point - that's fine. If loads have been taken away, you could lower both filters by a few numbers.
+### 5.2 Biallelic Loci Retention
+This filter will ensure we don't have any loci which only have one allele. We do this by making sure each site has a max of 2 and a min of 2 alleles.
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=biallelic
+#SBATCH --output=biallelic%A_%a.out
+#SBATCH --error=biallelic%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=2-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
+
+vcftools --vcf 50inds_minDP6GQ18.recode.vcf --max-alleles 2 --min-alleles 2 --recode --out 50inds_minDP6GQ18_biallelic
+```
+### 5.3 Missing Data Removal
+This filter allows to remove sites which have 'too much' missing data. In this case, we've used 0.75 to represent us allowing to keep 25% of missing data - meaning for 50 individuals, ~12 individuals can be missing a genotype call. 
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=missingdata
+#SBATCH --output=missingdata%A_%a.out
+#SBATCH --error=missingdata%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
+
+vcftools --vcf 50inds_minDP6GQ18_biallelic.recode.vcf --max-missing 0.75 --recode --out 50inds_minDP6GQ18_biallelic_0.25missing
+```
+### 5.4 Minor Allele Count/Minor Allele Frequency
+This is another common filter used to remove loci where alleles appear very infrequently -- i.e. to take out any data which is extremely rare and would affect the analysis results for no good reason. In this case we use a MAC of 4, meaning minor alleles have to appear at least 4 times in order to be retained.
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=MAC4
+#SBATCH --output=MAC4%A_%a.out
+#SBATCH --error=MAC4%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
+
+vcftools --vcf 50inds_minDP6GQ18_biallelic_0.25missing.recode.vcf --mac 4 --recode --out 50inds_minDP6GQ18_biallelic_0.25missing_mac4
+```
+### 5.5 Max mean depth
+We've already done minimum depth -- now we need to also make sure no sites go *too* deep also. We can do this first by generating a report which will tell us the mean site depth across the VCF
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=mdreport
+#SBATCH --output=mdreport%A_%a.out
+#SBATCH --error=mdreport%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
+vcftools --vcf 50inds_minDP6GQ18_biallelic_0.25missing_mac4.recode.vcf --site-mean-depth --out 50inds_minDP6GQ18_biallelic_0.25missing_mac4
+```
+Note how we don't recode this one as we're not changing anything yet - we're just generating a report!
+The report should be a .ldepth.mean file -- you can open it using a text editor to read it.
+The best way to figure out which value you should actually use as your maximum depth is by inputting the dataset into R, and figuring out mean and SD
+```
+R
+ldepth<-read.table("50inds_minDP6GQ18_biallelic_0.25missing_mac4.ldepth.mean", sep="\t", header = TRUE)
+mean(ldepth$MEAN_DEPTH)
+sd(ldepth$MEAN_DEPTH)
+q()
+```
+My results from this gave me a max mean depth to use of 20, but you can edit it to whatever R gives you
+
+Now, we just need to run the filter
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=max20
+#SBATCH --output=max20%A_%a.out
+#SBATCH --error=max20%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
+
+vcftools --vcf 50inds_minDP6GQ18_biallelic_0.25missing_mac4.recode.vcf --max-meanDP 20 --recode --out 50inds_minDP6GQ18_biallelic_0.25missing_mac4_maxDP
+```
+## 5.6 Linkage Disequilibrium
+Here, we want to 'thin' our loci to only maintain sites which are a specific distance apart from each other with the reference genome contigs. The simplest method of doing this is to just insert a typical distance -- in this case 1 locus per 10kb. 
+You can look into LD and figure out if another value is more appropriate
+```
+#!/bin/bash
+#SBATCH -c 8
+#SBATCH -t 0-10
+#SBATCH --job-name=ld
+#SBATCH --output=ld%A_%a.out
+#SBATCH --error=ld%A_%a.err
+#SBATCH -p defq
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --mail-type=ALL
+
+vcftools --vcf 50inds_minDP6GQ18_biallelic_0.25missing_mac4.recode.vcf --thin 10000 --recode --out 50inds_minDP6GQ18_biallelic_0.25missing_mac4_thinned10kb
+```
+This was our final filter! If we're happy with the amount of sites remaining, we can then move on to analysis - but this is it for the bioinformatics portion!
 
 
 
